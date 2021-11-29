@@ -172,7 +172,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	else if(input->stream == INFRARED_RGB)
 		hw_config->pixel_format = "uyvy422";
 
-	hw_config->encoder = "h264_vaapi";
+	hw_config->encoder = "h264_nvenc";
 	hw_config->width = input->width = atoi(argv[4]);
 	hw_config->height = input->height = atoi(argv[5]);
 	hw_config->framerate = input->framerate = atoi(argv[6]);
