@@ -338,7 +338,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	//DEPTH hardware encoding configuration
 	hw_config[Depth].profile = FF_PROFILE_HEVC_MAIN_10;
 	hw_config[Depth].pixel_format = "p010le";
-	hw_config[Depth].encoder = "hevc_vaapi";
+	hw_config[Depth].encoder = "hevc_nvenc";
 
 	//dimmensions will match alignment target
 	hw_config[Depth].width = (input->align_to == Color) ? input->color_width : input->depth_width;
@@ -357,7 +357,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	hw_config[Color].profile = FF_PROFILE_HEVC_MAIN;
 	//use YUYV/RGBA when aligning to color/depth (aligning YUYV not possible in librealsense)
 	hw_config[Color].pixel_format = (input->align_to == Color) ? "yuyv422" : "rgb0";
-	hw_config[Color].encoder = "hevc_vaapi";
+	hw_config[Color].encoder = "hevc_nvenc";
 
 	//dimmensions will match alignment target
 	hw_config[Color].width = (input->align_to == Color) ? input->color_width : input->depth_width;

@@ -192,7 +192,7 @@ void init_realsense(rs2::pipeline& pipe, input_args& input)
 	if(input.stream == INFRARED)
 		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_Y8, input.framerate);
 	else //INFRARED_RGB
-		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_UYVY, input.framerate);
+		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_UYVY, input.framerate); // Note: Not supported on L515
 
 	rs2::pipeline_profile profile = pipe.start(cfg);
 
@@ -330,7 +330,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	//DEPTH hardware encoding configuration
 	hw_config[DEPTH].profile = FF_PROFILE_HEVC_MAIN_10;
 	hw_config[DEPTH].pixel_format = "p010le";
-	hw_config[DEPTH].encoder = "hevc_vaapi";
+	hw_config[DEPTH].encoder = "hevc_nvenc";
 	hw_config[DEPTH].width = input->width = atoi(argv[4]);
 	hw_config[DEPTH].height = input->height = atoi(argv[5]);
 	hw_config[DEPTH].framerate = input->framerate = atoi(argv[6]);
@@ -345,7 +345,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	//INFRARED hardware encoding configuration
 	hw_config[IR].profile = FF_PROFILE_HEVC_MAIN;
 	hw_config[IR].pixel_format = (input->stream == INFRARED) ? "nv12" : "uyvy422";
-	hw_config[IR].encoder = "hevc_vaapi";
+	hw_config[IR].encoder = "hevc_nvenc";
 	hw_config[IR].width = input->width = atoi(argv[4]);
 	hw_config[IR].height = input->height = atoi(argv[5]);
 	hw_config[IR].framerate = input->framerate = atoi(argv[6]);

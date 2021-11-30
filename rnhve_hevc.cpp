@@ -214,7 +214,7 @@ void init_realsense(rs2::pipeline& pipe, input_args& input)
 	else if(input.stream == INFRARED)
 		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_Y8, input.framerate);
 	else if(input.stream == INFRARED_RGB)
-		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_UYVY, input.framerate);
+		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_UYVY, input.framerate); // Note: Not support on L515, Y8 only
 	else if(input.stream == DEPTH)
 		cfg.enable_stream(RS2_STREAM_DEPTH, input.width, input.height, RS2_FORMAT_Z16, input.framerate);
 
@@ -385,7 +385,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 		hw_config->profile = FF_PROFILE_HEVC_MAIN_10;
 	}
 
-	hw_config->encoder = "hevc_vaapi";
+	hw_config->encoder = "hevc_nvenc";
 	hw_config->width = input->width = atoi(argv[4]);
 	hw_config->height = input->height = atoi(argv[5]);
 	hw_config->framerate = input->framerate = atoi(argv[6]);

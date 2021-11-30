@@ -123,7 +123,7 @@ void init_realsense(rs2::pipeline& pipe, const input_args& input)
 	else if(input.stream == INFRARED)
 		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_Y8, input.framerate);
 	else //INFRARED_RGB
-		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_UYVY, input.framerate);
+		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_UYVY, input.framerate); // Note: not supported on L515, Y8 only
 
 	rs2::pipeline_profile profile = pipe.start(cfg);
 }
