@@ -119,7 +119,7 @@ void init_realsense(rs2::pipeline& pipe, const input_args& input)
 	rs2::config cfg;
 
 	if(input.stream == COLOR)
-		cfg.enable_stream(RS2_STREAM_COLOR, input.width, input.height, RS2_FORMAT_YUYV, input.framerate);
+		cfg.enable_stream(RS2_STREAM_COLOR, input.width, input.height, RS2_FORMAT_RGBA8, input.framerate);
 	else if(input.stream == INFRARED)
 		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_Y8, input.framerate);
 	else //INFRARED_RGB
@@ -161,13 +161,15 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 
 	//on the other hand native format for VAAPI is nv12
 	//we will match:
-	//- Realsense RGB sensor YUYV with VAAPI YUYV422 (same format)
+	//- Realsense RGB sensor YUYV with VAAPI YUYV422 (same (packed) format. nvenc only has 420 and 444 as planar formats)
 	//- Realsense IR sensor Y8 with VAAPI NV12 (luminance plane with dummy color plane)
 	//- Realsense IR sensor rgb data UYVY with VAAPI uyvy422
 	//this way we always have optimal format at least on one side and hardware conversion on other
 	hw_config->pixel_format = "yuyv422";
 
-	if(input->stream == INFRARED)
+	if (input->stream == COLOR)
+		hw_config->pixel_format = "rgb0"; // streaming RGBA from the color sensor in realsense_init()
+	else if(input->stream == INFRARED)
 		hw_config->pixel_format = "nv12";
 	else if(input->stream == INFRARED_RGB)
 		hw_config->pixel_format = "uyvy422";

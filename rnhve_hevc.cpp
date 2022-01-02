@@ -57,6 +57,15 @@ const uint16_t P010LE_MAX = 0xFFC0; //in binary 10 ones followed by 6 zeroes
 
 int main(int argc, char* argv[])
 {
+	//prepare file for raw encoded output
+	FILE* output_file = fopen("output", "w+b");
+
+	if (output_file == NULL)
+	{
+		fprintf(stderr, "unable to open file for output\n");
+		return 3;
+	}
+
 	//nhve_hw_config {WIDTH, HEIGHT, FRAMERATE, DEVICE, ENCODER, PIXEL_FORMAT, PROFILE, BFRAMES, BITRATE, QP, GOP_SIZE};
 	//prepare NHVE Network Hardware Video Encoder
 	struct nhve_net_config net_config = {0};
@@ -68,13 +77,19 @@ int main(int argc, char* argv[])
 
 	rs2::pipeline realsense;
 
-	if(process_user_input(argc, argv, &user_input, &net_config, &hw_config) < 0)
+	if (process_user_input(argc, argv, &user_input, &net_config, &hw_config) < 0)
+	{
+		fclose(output_file);
 		return 1;
+	}
 
 	init_realsense(realsense, user_input);
 
-	if( (streamer = nhve_init(&net_config, &hw_config, 1, 0)) == NULL )
+	if ((streamer = nhve_init(&net_config, &hw_config, 1, 0)) == NULL)
+	{
+		fclose(output_file);
 		return hint_user_on_failure(argv);
+	}
 
 	bool status = false;
 
@@ -84,6 +99,7 @@ int main(int argc, char* argv[])
 		status = main_loop_color_infrared(user_input, realsense, streamer);
 
 	nhve_close(streamer);
+	fclose(output_file);
 
 	if(status)
 		cout << "Finished successfully." << endl;
@@ -115,6 +131,7 @@ bool main_loop_color_infrared(const input_args& input, rs2::pipeline& realsense,
 
 		frame.linesize[0] =  video_frame.get_stride_in_bytes();
 		frame.data[0] = (uint8_t*) video_frame.get_data();
+		int size = video_frame.get_data_size();
 
 		//if we are streaming infrared we have 2 planes (luminance and dummy color)
 		frame.linesize[1] = (input.stream == INFRARED) ? frame.linesize[0] : 0;
@@ -210,7 +227,7 @@ void init_realsense(rs2::pipeline& pipe, input_args& input)
 	rs2::config cfg;
 
 	if(input.stream == COLOR)
-		cfg.enable_stream(RS2_STREAM_COLOR, input.width, input.height, RS2_FORMAT_YUYV, input.framerate);
+		cfg.enable_stream(RS2_STREAM_COLOR, input.width, input.height, RS2_FORMAT_RGBA8, input.framerate);
 	else if(input.stream == INFRARED)
 		cfg.enable_stream(RS2_STREAM_INFRARED, input.width, input.height, RS2_FORMAT_Y8, input.framerate);
 	else if(input.stream == INFRARED_RGB)
@@ -374,11 +391,11 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	hw_config->profile = FF_PROFILE_HEVC_MAIN;
 
 	if(input->stream == COLOR)
-		hw_config->pixel_format = "yuyv422";
+		hw_config->pixel_format = "rgba"; // streaming RGBA8 from the color sensor in realsense_init()
 	else if(input->stream == INFRARED)
 		hw_config->pixel_format = "nv12";
 	else if(input->stream == INFRARED_RGB)
-		hw_config->pixel_format = "uyvy422";
+		hw_config->pixel_format = "uyvy422"; // RS2_FORMAT_UYVY not supported on L515 remember
 	else //DEPTH
 	{
 		hw_config->pixel_format = "p010le";
