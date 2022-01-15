@@ -125,13 +125,15 @@ bool main_loop_color_infrared(const input_args& input, rs2::pipeline& realsense,
 		{  //prepare dummy color plane for NV12 format, half the size of Y
 		   //we can't alloc it in advance, this is the first time we know realsense stride
 			int size = video_frame.get_stride_in_bytes()*video_frame.get_height()/2;
+			cout << "stride in bytes: " << video_frame.get_stride_in_bytes() << endl;
+			cout << "height: " << video_frame.get_height() << endl;
+			cout << "dummy data size: " << size << endl;
 			color_data = new uint8_t[size];
 			memset(color_data, 128, size);
 		}
 
 		frame.linesize[0] =  video_frame.get_stride_in_bytes();
 		frame.data[0] = (uint8_t*) video_frame.get_data();
-		int size = video_frame.get_data_size();
 
 		//if we are streaming infrared we have 2 planes (luminance and dummy color)
 		frame.linesize[1] = (input.stream == INFRARED) ? frame.linesize[0] : 0;
@@ -391,7 +393,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	hw_config->profile = FF_PROFILE_HEVC_MAIN;
 
 	if(input->stream == COLOR)
-		hw_config->pixel_format = "rgba"; // streaming RGBA8 from the color sensor in realsense_init()
+		hw_config->pixel_format = "rgb0"; // streaming RGBA8 from the color sensor in realsense_init()
 	else if(input->stream == INFRARED)
 		hw_config->pixel_format = "nv12";
 	else if(input->stream == INFRARED_RGB)
