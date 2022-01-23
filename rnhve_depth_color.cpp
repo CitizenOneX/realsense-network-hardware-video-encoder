@@ -175,11 +175,9 @@ void process_depth_data(const input_args &input, rs2::depth_frame &depth)
 void init_realsense(rs2::pipeline& pipe, input_args& input)
 {
 	rs2::config cfg;
-	//use YUYV/RGBA when aligning to color/depth (aligning YUYV not possible in librealsense)
-	rs2_format color_format = (input.align_to == Color) ? RS2_FORMAT_YUYV : RS2_FORMAT_RGBA8;
-
+	//use RGBA when aligning to color/depth (Realsense YUYV doesn't match any of my hevc_nvenc input formats)
 	cfg.enable_stream(RS2_STREAM_DEPTH, input.depth_width, input.depth_height, RS2_FORMAT_Z16, input.framerate);
-	cfg.enable_stream(RS2_STREAM_COLOR, input.color_width, input.color_height, color_format, input.framerate);
+	cfg.enable_stream(RS2_STREAM_COLOR, input.color_width, input.color_height, RS2_FORMAT_RGBA8, input.framerate);
 
 	rs2::pipeline_profile profile = pipe.start(cfg);
 
@@ -340,7 +338,7 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 	hw_config[Depth].pixel_format = "p010le";
 	hw_config[Depth].encoder = "hevc_nvenc";
 
-	//dimmensions will match alignment target
+	//output dimensions will match alignment target
 	hw_config[Depth].width = (input->align_to == Color) ? input->color_width : input->depth_width;
 	hw_config[Depth].height = (input->align_to == Color) ? input->color_height : input->depth_height;
 
@@ -355,11 +353,11 @@ int process_user_input(int argc, char* argv[], input_args* input, nhve_net_confi
 
 	//COLOR hardware encoding configuration
 	hw_config[Color].profile = FF_PROFILE_HEVC_MAIN;
-	//use YUYV/RGBA when aligning to color/depth (aligning YUYV not possible in librealsense)
-	hw_config[Color].pixel_format = (input->align_to == Color) ? "yuyv422" : "rgb0";
+	//use RGBA when aligning to color or depth (realsense YUYV doesn't match any of my hevc_nvenc input formats)
+	hw_config[Color].pixel_format = "rgb0";
 	hw_config[Color].encoder = "hevc_nvenc";
 
-	//dimmensions will match alignment target
+	//output dimensions will match alignment target
 	hw_config[Color].width = (input->align_to == Color) ? input->color_width : input->depth_width;
 	hw_config[Color].height = (input->align_to == Color) ? input->color_height : input->depth_height;
 
