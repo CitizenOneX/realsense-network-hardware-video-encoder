@@ -24,6 +24,8 @@
 #include <iostream>
 #include <math.h>
 
+#define BOUNDING_DEPTH 0.5f
+
 using namespace std;
 
 int hint_user_on_failure(char *argv[]);
@@ -87,6 +89,12 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+inline void update_thresholds(rs2::threshold_filter& filter, float center)
+{
+	filter.set_option(RS2_OPTION_MIN_DISTANCE, fmaxf(center - BOUNDING_DEPTH, 0.15f));
+	filter.set_option(RS2_OPTION_MAX_DISTANCE, fminf(center + BOUNDING_DEPTH, 2.0f));
+}
+
 //true on success, false on failure
 bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer)
 {
@@ -97,6 +105,7 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 	uint16_t *depth_uv = NULL; //data of dummy color plane for P010LE
 
 	rs2::align aligner( (input.align_to == Color) ? RS2_STREAM_COLOR : RS2_STREAM_DEPTH);
+	rs2::threshold_filter thresh_filter;
 
 	for(f = 0; f < frames; ++f)
 	{
@@ -104,7 +113,14 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 		frameset = aligner.process(frameset);
 
 		rs2::depth_frame depth = frameset.get_depth_frame();
+		// put a bounding volume around the object in the center of the frame, +-0.5m
+		update_thresholds(thresh_filter, depth.get_distance(depth.get_width() / 2, depth.get_height() / 2));
+		depth = thresh_filter.process(depth);
 		rs2::video_frame color = frameset.get_color_frame();
+
+		// TODO do I need to set all color frame pixels to black whose depth=0 in the depth frame?
+		// can the threshold_filter tell me which pixels it changed? Or is it easier for me to
+		// implement the threshold filter manually and set both depth and color together?
 
 		const int h = depth.get_height();
 		const int depth_stride=depth.get_stride_in_bytes();
