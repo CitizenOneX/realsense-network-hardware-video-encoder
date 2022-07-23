@@ -60,3 +60,7 @@ add_executable(realsense-nhve-depth-color rnhve_depth_color.cpp)
 target_include_directories(realsense-nhve-depth-color PRIVATE network-hardware-video-encoder)
 target_link_libraries(realsense-nhve-depth-color nhve ${REALSENSE2_FOUND})
 
+add_executable(realsense-nhve-depth-color-audio rnhve_depth_color_audio.cpp audio_winmm.cpp)
+target_include_directories(realsense-nhve-depth-color-audio PRIVATE network-hardware-video-encoder)
+target_link_libraries(realsense-nhve-depth-color-audio nhve ${REALSENSE2_FOUND})
+
