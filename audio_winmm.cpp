@@ -2,18 +2,22 @@
 
 #include <Windows.h>
 #include <mmsystem.h>
-#include <fstream>
+//#include <fstream>
 #include <iostream>
+
+// Network Hardware Video Encoder
+#include "nhve.h"
 
 #define SAMPLE_RATE 22050
 #define CHANNELS 1
 #define BYTES_PER_SAMPLE 2
+#define BUFFERS_PER_SECOND 25
 
 // pull the buffers out as globals
-char buffers[2][SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE / 2];    // 2 buffers, each half of a second long
+char buffers[2][SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE / BUFFERS_PER_SECOND];    // 2 buffers, each 1/25 of a second long
 WAVEHDR headers[2] = { {},{} };           // initialize them to zeros
 HWAVEIN wi;
-std::ofstream outfile("my_recorded_audio.bin", std::ios_base::out | std::ios_base::binary);
+//std::ofstream outfile("my_recorded_audio.bin", std::ios_base::out | std::ios_base::binary);
 
 void init_audio()
 {
@@ -37,15 +41,11 @@ void init_audio()
         CALLBACK_NULL | WAVE_FORMAT_DIRECT   // tell it we do not need a callback
     );
 
-    // At this point, we have our device, now we need to give it buffers (with headers) that it can
-    //  put the recorded audio somewhere
-    //char buffers[2][SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE / 2];    // 2 buffers, each half of a second long
-    //WAVEHDR headers[2] = { {},{} };           // initialize them to zeros
-
+    // initialise the headers and buffers
     for (int i = 0; i < 2; ++i)
     {
         headers[i].lpData = buffers[i];             // give it a pointer to our buffer
-        headers[i].dwBufferLength = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE / 2;      // tell it the size of that buffer in bytes
+        headers[i].dwBufferLength = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE / BUFFERS_PER_SECOND;      // tell it the size of that buffer in bytes
         // the other parts of the header we don't really care about for this example, and can be left at zero
 
         // Prepare each header
@@ -66,19 +66,26 @@ void init_audio()
     waveInStart(wi);
 }
 
-    // Now that we are recording, keep polling our buffers to see if they have been filled.
-    //   If they have been, dump their contents to the file and re-add them to the queue so they
-    //   can get filled again, and again, and again
-    //while (!(GetAsyncKeyState(VK_ESCAPE) & 0x8000))  // keep looping until the user hits escape
-    //{
-void process_audio()
+// Now that we are recording, keep polling our buffers to see if they have been filled.
+//   If they have been, dump their contents to the file and re-add them to the queue so they
+//   can get filled again, and again, and again
+void process_audio(nhve_frame *auxFrame)
 {
+    int offset = 0; // in case we need to copy two blocks of data back
+
     for (auto& h : headers)      // check each header
     {
         if (h.dwFlags & WHDR_DONE)           // is this header done?
         {
-            // if yes, dump it to our file
-            outfile.write(h.lpData, h.dwBufferLength);
+            // if yes, copy the data back to the caller via the args
+            //std::cout << "Buffer length writing: " << h.dwBufferLength << std::endl;
+            auxFrame->linesize[0] = h.dwBufferLength; // + offset?...
+            auxFrame->data[0] = (uint8_t*)h.lpData; // TODO buffers are contiguous, but maybe out of order? here I'm overwriting the second time...
+            offset = h.dwBufferLength;
+            //std::cout << "done copying buffer pointer bytes: " << *linesize << std::endl;
+
+            // TODO will the buffers sometimes fill out of order? I.e. 1 then 0?
+            // and when I iterate over them, do I get them in reverse order?
 
             // then re-add it to the queue
             h.dwFlags = 0;          // clear the 'done' flag
@@ -89,7 +96,6 @@ void process_audio()
             waveInAddBuffer(wi, &h, sizeof(h));
         }
     }
-    //}
 }
 
 void terminate_audio()
