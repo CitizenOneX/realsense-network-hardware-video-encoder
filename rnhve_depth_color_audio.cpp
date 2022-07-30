@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
 	init_realsense(realsense, user_input);
 	init_audio();
 
-	if( (streamer = nhve_init(&net_config, hw_configs, 2, 1)) == NULL )
+	if( (streamer = nhve_init(&net_config, hw_configs, 2, 0)) == NULL ) // TODO Set back to aux=1
 		return hint_user_on_failure(argv);
 
 	bool status = main_loop(user_input, realsense, streamer);
@@ -155,7 +155,7 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 		// copy the audio data into the aux channel directly
 		// TODO consider if we need to zero it out or reset a position pointer
 		// after sending - otherwise the same frame will be sent every time?
-		process_audio(&frame[2]);
+		//process_audio(&frame[2]);
 
 
 		if(nhve_send(streamer, &frame[0], 0) != NHVE_OK)
@@ -170,22 +170,22 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 			break;
 		}
 
-		if (nhve_send(streamer, &frame[2], 2) != NHVE_OK)
-		{
-			cerr << "failed to send aux frame" << endl;
-			break;
-		}
+		//if (nhve_send(streamer, &frame[2], 2) != NHVE_OK)
+		//{
+		//	cerr << "failed to send aux frame" << endl;
+		//	break;
+		//}
 
 		// TODO check if this is necessary - I think it is otherwise we'll be sending
 		// the same audio data every video frame
-		frame[2].data[0] = NULL;
-		frame[2].linesize[0] = 0;
+		//frame[2].data[0] = NULL;
+		//frame[2].linesize[0] = 0;
 	}
 
 	//flush the streamer by sending NULL frame
 	nhve_send(streamer, NULL, 0);
 	nhve_send(streamer, NULL, 1);
-	nhve_send(streamer, NULL, 2);
+	//nhve_send(streamer, NULL, 2);
 
 	delete [] depth_uv;
 
