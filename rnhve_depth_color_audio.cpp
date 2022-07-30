@@ -81,6 +81,7 @@ int main(int argc, char* argv[])
 
 	init_realsense(realsense, user_input);
 	init_audio();
+	cout << "Now recording audio.  Press Escape to stop and exit." << endl;
 
 	if( (streamer = nhve_init(&net_config, hw_configs, 2, 0)) == NULL ) // TODO Set back to aux=1
 		return hint_user_on_failure(argv);
@@ -89,6 +90,7 @@ int main(int argc, char* argv[])
 
 	nhve_close(streamer);
 	terminate_audio();
+	cout << "Audio terminated." << endl;
 
 	if(status)
 		cout << "Finished successfully." << endl;
