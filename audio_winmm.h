@@ -1,4 +1,8 @@
-#pragma once
+/**
+ * Handles audio processing on Windows using WinMM
+ */
+#ifndef AUDIO_WINMM_H
+#define AUDIO_WINMM_H
 
 #include <Windows.h>
 #include <mmreg.h>
@@ -8,29 +12,37 @@
 #define SAMPLE_RATE 22050
 #define CHANNELS 1
 #define BYTES_PER_SAMPLE 4
+#define AUDIO_BUFFER_SAMPLES 4096
 
-class AudioWinMM
+struct audio_state
 {
-public:
-    AudioWinMM(float* audio_buffer, std::mutex* audio_buffer_mutex, int* audio_data_length_written, volatile bool* audio_data_ready);
-    ~AudioWinMM();
+    // guards the rest of audio_state
+    std::mutex audio_buffer_mutex;
+    float* audio_buffer;
+    int audio_data_length_written;
+    bool volatile audio_data_ready;
 
-    void init();
-    void terminate();
-    static const int BUFFER_SAMPLES = 4096;
+    audio_state():
+        audio_buffer(new float[AUDIO_BUFFER_SAMPLES]),
+        audio_data_length_written(0),
+        audio_data_ready(false)
+    {}
 
-private:
-    // pull the buffers out as globals
-    char buffers[2][BUFFER_SAMPLES * 4];      // 4096 32-bit float samples, what Unity likes best
-    WAVEHDR headers[2] = { {},{} };           // initialize headers to zeros
-    HWAVEIN wi;
-
-    // need to synchronise access to the float buffer between the callback and the main thread
-    // main thread will create these but we need to use them
-    static std::mutex* audio_buffer_mutex;
-    static float* audio_buffer;
-    static int* audio_data_length_written;
-    static volatile bool* audio_data_ready;
-
-    static void CALLBACK callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
+    ~audio_state()
+    {
+        delete audio_buffer;
+    }
 };
+
+struct audio
+{
+    char buffers[2][AUDIO_BUFFER_SAMPLES * 4];      // 4096 32-bit float samples, what Unity likes best
+    WAVEHDR headers[2] = { {},{} };                 // initialize headers to zeros
+    HWAVEIN wi;
+};
+
+struct audio* audio_init(audio_state* cfg);
+void audio_terminate(audio* audio);
+static void CALLBACK audio_callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
+
+#endif

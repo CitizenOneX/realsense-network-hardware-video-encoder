@@ -65,13 +65,6 @@ static void realsense_worker_thread(rs2::pipeline& realsense, const input_args& 
 
 const uint16_t P010LE_MAX = 0xFFC0; //in binary 10 ones followed by 6 zeroes
 
-// need to synchronise access to the float buffer between the callback and the main thread
-std::mutex audio_buffer_mutex;
-float* audio_buffer = NULL;
-int audio_data_length = 0;
-bool volatile audio_data_ready = false;
-// end protected by audio_buffer_mutex
-
 // need to synchronise access to the realsense frame data between the worker_thread thread and the main thread
 std::mutex realsense_data_mutex;
 uint16_t* depth_uv = NULL; //data of dummy color plane for P010LE
@@ -84,6 +77,10 @@ volatile bool realsense_data_ready = false;
 
 // control the realsense thread
 bool volatile keep_working = true;
+
+// working space for audio data structures
+audio_state a_state;
+
 
 int main(int argc, char* argv[])
 {
@@ -99,9 +96,7 @@ int main(int argc, char* argv[])
 		return 1;
 
 	// start the audio source
-	audio_buffer = new float[4096]; // TODO should be AudioWinMM.BUFFER_SAMPLES
-	AudioWinMM audio(audio_buffer, &audio_buffer_mutex, &audio_data_length, &audio_data_ready);
-	audio.init();
+	audio* a = audio_init(&a_state);
 
 	// start realsense source
 	rs2::pipeline realsense;
@@ -109,7 +104,7 @@ int main(int argc, char* argv[])
 	thread worker_thread = thread(realsense_worker_thread, realsense, user_input);
 
 
-	if( (streamer = nhve_init(&net_config, hw_configs, 2, 0)) == NULL ) // TODO Set back to aux=1
+	if( (streamer = nhve_init(&net_config, hw_configs, 2, 1)) == NULL )
 		return hint_user_on_failure(argv);
 
 	bool status = main_loop(user_input, realsense, streamer);
@@ -123,7 +118,7 @@ int main(int argc, char* argv[])
 		worker_thread.join();
 
 	// close off the audio source
-	audio.terminate();
+	audio_terminate(a);
 
 	if(status)
 		cout << "Finished successfully." << endl;
@@ -229,13 +224,13 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 			frame[1].data[0] = 0;
 		}
 
-		if (audio_data_ready)
+		if (a_state.audio_data_ready)
 		{
 			// pass on the audio in subframe 2
-			std::lock_guard<std::mutex> guard(audio_buffer_mutex);
-			frame[2].data[0] = (uint8_t*)audio_buffer;
-			frame[2].linesize[0] = audio_data_length;
-			audio_data_ready = false;
+			std::lock_guard<std::mutex> guard(a_state.audio_buffer_mutex);
+			frame[2].data[0] = (uint8_t*)a_state.audio_buffer;
+			frame[2].linesize[0] = a_state.audio_data_length_written;
+			a_state.audio_data_ready = false;
 			frame_ready = true;
 		}
 		else
