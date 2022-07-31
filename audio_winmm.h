@@ -12,7 +12,7 @@
 #define SAMPLE_RATE 22050
 #define CHANNELS 1
 #define BYTES_PER_SAMPLE 4
-#define AUDIO_BUFFER_SAMPLES 4096
+#define AUDIO_BUFFER_SAMPLES 16384
 
 struct audio_state
 {
@@ -36,7 +36,7 @@ struct audio_state
 
 struct audio
 {
-    char buffers[2][AUDIO_BUFFER_SAMPLES * 4];      // 4096 32-bit float samples, what Unity likes best
+    char buffers[2][AUDIO_BUFFER_SAMPLES * 4];      // 32-bit float samples, what Unity likes best
     WAVEHDR headers[2] = { {},{} };                 // initialize headers to zeros
     HWAVEIN wi;
 };

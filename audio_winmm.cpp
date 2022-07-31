@@ -63,8 +63,9 @@ void CALLBACK audio_callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstan
 
         {
             std::lock_guard<std::mutex> guard(state->audio_buffer_mutex);
-            memcpy(state->audio_buffer, h->lpData, h->dwBufferLength);
-            state->audio_data_length_written = h->dwBufferLength;
+            memcpy(state->audio_buffer, h->lpData, h->dwBytesRecorded);
+            state->audio_data_length_written = h->dwBytesRecorded;
+            state->audio_data_ready = true;
         }
 
         // then re-add the buffer to the queue

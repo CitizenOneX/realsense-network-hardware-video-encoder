@@ -203,12 +203,12 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 			std::lock_guard<std::mutex> guard(realsense_data_mutex);
 
 			//supply realsense frame data as ffmpeg frame data
-			frame[0].linesize[0] = frame[0].linesize[1] = depth_stride; //the strides of Y and UV are equal
 			frame[0].data[0] = depth_data;
 			frame[0].data[1] = (uint8_t*)depth_uv;
+			frame[0].linesize[0] = frame[0].linesize[1] = depth_stride; //the strides of Y and UV are equal
 
-			frame[1].linesize[0] = color_stride;
 			frame[1].data[0] = color_data;
+			frame[1].linesize[0] = color_stride;
 
 			realsense_data_ready = false;
 			frame_ready = true;
@@ -216,12 +216,13 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 		else
 		{
 			// zero out subframes 0 and 1 if there's no depth/color frame this time
-			frame[0].linesize[0] = 0;
 			frame[0].data[0] = 0;
 			frame[0].data[1] = 0;
+			frame[0].linesize[0] = 0;
+			frame[0].linesize[1] = 0;
 
-			frame[1].linesize[0] = 0;
 			frame[1].data[0] = 0;
+			frame[1].linesize[0] = 0;
 		}
 
 		if (a_state.audio_data_ready)
