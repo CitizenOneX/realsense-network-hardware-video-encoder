@@ -2,9 +2,10 @@
  * Realsense Network Hardware Video Encoder with Audio
  *
  * Realsense hardware encoded UDP HEVC aligned multi-streaming
- * - depth (Main10) + color (Main) + audio (raw 16-bit mono PCM in aux nhve channel)
+ * - depth (Main10) + color (Main) + audio (raw 32-bit mono PCM floats in aux nhve channel)
  *
  * Copyright 2020 (C) Bartosz Meglicki <meglickib@gmail.com>
+ * Audio added by CitizenOne
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -24,6 +25,10 @@
 #include <iostream>
 #include <math.h>
 #include <Windows.h> // check for Escape press
+#include <mutex>
+
+// audio source for Windows
+#include "audio_winmm.h"
 
 #define BOUNDING_DEPTH 0.5f
 
@@ -56,13 +61,29 @@ void init_realsense_depth(rs2::pipeline& pipe, const rs2::config &cfg, input_arg
 void print_intrinsics(const rs2::pipeline_profile& profile, rs2_stream stream);
 
 int process_user_input(int argc, char* argv[], input_args* input, nhve_net_config *net_config, nhve_hw_config *hw_config);
+static void realsense_worker_thread(rs2::pipeline& realsense, const input_args& input);
 
 const uint16_t P010LE_MAX = 0xFFC0; //in binary 10 ones followed by 6 zeroes
 
-// implementations in audio_winmm.cpp
-void init_audio();
-void process_audio(nhve_frame *auxFrame);
-void terminate_audio();
+// need to synchronise access to the float buffer between the callback and the main thread
+std::mutex audio_buffer_mutex;
+float* audio_buffer = NULL;
+int audio_data_length = 0;
+bool volatile audio_data_ready = false;
+// end protected by audio_buffer_mutex
+
+// need to synchronise access to the realsense frame data between the worker_thread thread and the main thread
+std::mutex realsense_data_mutex;
+uint16_t* depth_uv = NULL; //data of dummy color plane for P010LE
+int depth_stride = 0;
+uint8_t* depth_data = NULL;
+int color_stride = 0;
+uint8_t* color_data = NULL;
+volatile bool realsense_data_ready = false;
+// end protected by realsense_data_mutex
+
+// control the realsense thread
+bool volatile keep_working = true;
 
 int main(int argc, char* argv[])
 {
@@ -74,14 +95,19 @@ int main(int argc, char* argv[])
 	struct input_args user_input = {0};
 	user_input.depth_units=0.0001f; //optionally override with user input
 
-	rs2::pipeline realsense;
-
 	if(process_user_input(argc, argv, &user_input, &net_config, hw_configs) < 0)
 		return 1;
 
+	// start the audio source
+	audio_buffer = new float[4096]; // TODO should be AudioWinMM.BUFFER_SAMPLES
+	AudioWinMM audio(audio_buffer, &audio_buffer_mutex, &audio_data_length, &audio_data_ready);
+	audio.init();
+
+	// start realsense source
+	rs2::pipeline realsense;
 	init_realsense(realsense, user_input);
-	init_audio();
-	cout << "Now recording audio.  Press Escape to stop and exit." << endl;
+	thread worker_thread = thread(realsense_worker_thread, realsense, user_input);
+
 
 	if( (streamer = nhve_init(&net_config, hw_configs, 2, 0)) == NULL ) // TODO Set back to aux=1
 		return hint_user_on_failure(argv);
@@ -89,8 +115,15 @@ int main(int argc, char* argv[])
 	bool status = main_loop(user_input, realsense, streamer);
 
 	nhve_close(streamer);
-	terminate_audio();
-	cout << "Audio terminated." << endl;
+
+	// close off the realsense source,
+	// stop the realsense worker_thread thread
+	keep_working = false;
+	if (worker_thread.joinable())
+		worker_thread.join();
+
+	// close off the audio source
+	audio.terminate();
 
 	if(status)
 		cout << "Finished successfully." << endl;
@@ -104,17 +137,18 @@ inline void update_thresholds(rs2::threshold_filter& filter, float center)
 	filter.set_option(RS2_OPTION_MAX_DISTANCE, fminf(center + BOUNDING_DEPTH, 2.0f));
 }
 
-//true on success, false on failure
-bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer)
+/// <summary>
+/// move the realsense wait-for-frames and processing to another thread
+/// and only provide the frames to the main thread when they're ready
+/// </summary>
+/// <param name="realsense"></param>
+/// <param name="input"></param>
+static void realsense_worker_thread(rs2::pipeline& realsense, const input_args& input)
 {
-	nhve_frame frame[3] = { {0}, {0}, {0} };
-
-	uint16_t *depth_uv = NULL; //data of dummy color plane for P010LE
-
-	rs2::align aligner( (input.align_to == Color) ? RS2_STREAM_COLOR : RS2_STREAM_DEPTH);
+	rs2::align aligner((input.align_to == Color) ? RS2_STREAM_COLOR : RS2_STREAM_DEPTH);
 	rs2::threshold_filter thresh_filter;
 
-	while (!(GetAsyncKeyState(VK_ESCAPE) & 0x8000))  // keep looping until the user hits escape
+	while (keep_working)
 	{
 		rs2::frameset frameset = realsense.wait_for_frames();
 		frameset = aligner.process(frameset);
@@ -130,64 +164,116 @@ bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer
 		// implement the threshold filter manually and set both depth and color together?
 
 		const int h = depth.get_height();
-		const int depth_stride=depth.get_stride_in_bytes();
+		int local_depth_stride = depth.get_stride_in_bytes();
 
 		//L515 doesn't support setting depth units and clamping
-		if(input.needs_postprocessing)
+		if (input.needs_postprocessing)
 			process_depth_data(input, depth);
 
-		if(!depth_uv)
+		if (!depth_uv)
 		{  //prepare dummy color plane for P010LE format, half the size of Y
 			//we can't alloc it in advance, this is the first time we know realsense stride
 			//the stride will be at least width * 2 (Realsense Z16, VAAPI P010LE)
-			depth_uv = new uint16_t[depth_stride/2*h/2];
+			depth_uv = new uint16_t[local_depth_stride / 2 * h / 2];
 
-			for(int i=0;i<depth_stride/2*h/2;++i)
+			for (int i = 0; i < local_depth_stride / 2 * h / 2; ++i)
 				depth_uv[i] = UINT16_MAX / 2; //dummy middle value for U/V, equals 128 << 8, equals 32768
 		}
 
-		//supply realsense frame data as ffmpeg frame data
-		frame[0].linesize[0] = frame[0].linesize[1] =  depth_stride; //the strides of Y and UV are equal
-		frame[0].data[0] = (uint8_t*) depth.get_data();
-		frame[0].data[1] = (uint8_t*) depth_uv;
-
-		frame[1].linesize[0] = color.get_stride_in_bytes();
-		frame[1].data[0] = (uint8_t*) color.get_data();
-
-		// copy the audio data into the aux channel directly
-		// TODO consider if we need to zero it out or reset a position pointer
-		// after sending - otherwise the same frame will be sent every time?
-		//process_audio(&frame[2]);
-
-
-		if(nhve_send(streamer, &frame[0], 0) != NHVE_OK)
 		{
-			cerr << "failed to send depth frame" << endl;
-			break;
+			// use a mutex to make sure the main thread doesn't read these
+			// while we're updating all of them
+			// TODO not sure how long these data pointers will last after the frames go out of scope...
+			std::lock_guard<std::mutex> guard(realsense_data_mutex);
+			depth_stride = local_depth_stride;
+			depth_data = (uint8_t*)depth.get_data();
+			color_stride = color.get_stride_in_bytes();
+			color_data = (uint8_t*)color.get_data();
+			realsense_data_ready = true;
+		}
+	}
+}
+
+//true on success, false on failure
+bool main_loop(const input_args& input, rs2::pipeline& realsense, nhve *streamer)
+{
+	nhve_frame frame[3] = { {0}, {0}, {0} };
+	bool frame_ready = false;
+
+	// this loop should run pretty hot...
+	while (!(GetAsyncKeyState(VK_ESCAPE) & 0x8000))  // keep looping until the user hits escape
+	{
+		if (realsense_data_ready)
+		{
+			std::lock_guard<std::mutex> guard(realsense_data_mutex);
+
+			//supply realsense frame data as ffmpeg frame data
+			frame[0].linesize[0] = frame[0].linesize[1] = depth_stride; //the strides of Y and UV are equal
+			frame[0].data[0] = depth_data;
+			frame[0].data[1] = (uint8_t*)depth_uv;
+
+			frame[1].linesize[0] = color_stride;
+			frame[1].data[0] = color_data;
+
+			realsense_data_ready = false;
+			frame_ready = true;
+		}
+		else
+		{
+			// zero out subframes 0 and 1 if there's no depth/color frame this time
+			frame[0].linesize[0] = 0;
+			frame[0].data[0] = 0;
+			frame[0].data[1] = 0;
+
+			frame[1].linesize[0] = 0;
+			frame[1].data[0] = 0;
 		}
 
-		if(nhve_send(streamer, &frame[1], 1) != NHVE_OK)
+		if (audio_data_ready)
 		{
-			cerr << "failed to send color frame" << endl;
-			break;
+			// pass on the audio in subframe 2
+			std::lock_guard<std::mutex> guard(audio_buffer_mutex);
+			frame[2].data[0] = (uint8_t*)audio_buffer;
+			frame[2].linesize[0] = audio_data_length;
+			audio_data_ready = false;
+			frame_ready = true;
+		}
+		else
+		{
+			// set subframe 2 to empty if there's no audio this time
+			frame[2].data[0] = NULL;
+			frame[2].linesize[0] = 0;
 		}
 
-		//if (nhve_send(streamer, &frame[2], 2) != NHVE_OK)
-		//{
-		//	cerr << "failed to send aux frame" << endl;
-		//	break;
-		//}
+		// only send a frame if at least one of the subframes had data
+		if (frame_ready)
+		{
+			if (nhve_send(streamer, &frame[0], 0) != NHVE_OK)
+			{
+				cerr << "failed to send depth frame" << endl;
+				break;
+			}
 
-		// TODO check if this is necessary - I think it is otherwise we'll be sending
-		// the same audio data every video frame
-		//frame[2].data[0] = NULL;
-		//frame[2].linesize[0] = 0;
+			if (nhve_send(streamer, &frame[1], 1) != NHVE_OK)
+			{
+				cerr << "failed to send color frame" << endl;
+				break;
+			}
+
+			if (nhve_send(streamer, &frame[2], 2) != NHVE_OK)
+			{
+				cerr << "failed to send aux frame" << endl;
+				break;
+			}
+
+			frame_ready = false;
+		}
 	}
 
 	//flush the streamer by sending NULL frame
 	nhve_send(streamer, NULL, 0);
 	nhve_send(streamer, NULL, 1);
-	//nhve_send(streamer, NULL, 2);
+	nhve_send(streamer, NULL, 2);
 
 	delete [] depth_uv;
 

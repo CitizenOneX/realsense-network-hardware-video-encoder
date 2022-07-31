@@ -1,27 +1,22 @@
 #pragma comment(lib,"winmm.lib")
 
-#include <Windows.h>
-#include <mmreg.h>
-#include <mmsystem.h>
-#include <mutex>
+#include "audio_winmm.h"
 
-#define SAMPLE_RATE 22050
-#define CHANNELS 1
-#define BYTES_PER_SAMPLE 4
-#define BUFFER_SAMPLES 4096
+AudioWinMM::AudioWinMM(float* audio_buffer, std::mutex* audio_buffer_mutex, int* audio_data_length_written, volatile bool* audio_data_ready)
+{
+    // TODO switch to other style of initialiser to copy these automatically?
+    this->audio_buffer = audio_buffer;
+    this->audio_buffer_mutex = audio_buffer_mutex;
+    this->audio_data_length_written = audio_data_length_written;
+    this->audio_data_ready = audio_data_ready;
+}
 
-// pull the buffers out as globals
-char buffers[2][BUFFER_SAMPLES * 4];      // 4096 32-bit float samples, what Unity likes best
-WAVEHDR headers[2] = { {},{} };           // initialize headers to zeros
-HWAVEIN wi;
+AudioWinMM::~AudioWinMM()
+{
+}
 
-// need to synchronise access to the float buffer between the callback and the main thread
-std::mutex audio_buffer_mutex;
-float audio_buffer[BUFFER_SAMPLES];
 
-void CALLBACK callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
-
-void init_audio()
+void AudioWinMM::init()
 {
     // Fill the WAVEFORMATEX struct to indicate the format of our recorded audio
     //   For this example we'll use medium quality, ie:  22050 Hz, mono, 32-bit floats
@@ -46,8 +41,8 @@ void init_audio()
     // initialise the headers and buffers
     for (int i = 0; i < 2; ++i)
     {
-        headers[i].lpData = buffers[i];                     // give it a pointer to our buffer
-        headers[i].dwBufferLength = BUFFER_SAMPLES * 2;      // tell it the size of that buffer in bytes
+        headers[i].lpData = buffers[i];                         // give it a pointer to our buffer
+        headers[i].dwBufferLength = this->BUFFER_SAMPLES * 4;   // tell it the size of that buffer in bytes
         // the other parts of the header we don't really care about, and can be left at zero
 
         // Prepare each header
@@ -68,7 +63,7 @@ void init_audio()
 /// copy the PCM (float) data straight over
 /// releasing the lock at the end and releasing the audio buffers back to the WaveIn device
 /// </summary>
-void CALLBACK callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
+void CALLBACK AudioWinMM::callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
     // only process DATA, no need to do anything with open/close
     if (WIM_DATA == uMsg)
@@ -76,8 +71,9 @@ void CALLBACK callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DW
         WAVEHDR* h = (WAVEHDR*)dwParam1;
 
         {
-            std::lock_guard<std::mutex> guard(audio_buffer_mutex);
+            std::lock_guard<std::mutex> guard(*audio_buffer_mutex);
             memcpy(audio_buffer, h->lpData, h->dwBufferLength);
+            *audio_data_length_written = h->dwBufferLength;
         }
 
         // then re-add the buffer to the queue
@@ -88,7 +84,7 @@ void CALLBACK callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DW
     }
 }
 
-void terminate_audio()
+void AudioWinMM::terminate()
 {
     waveInStop(wi);
     for (auto& h : headers)
