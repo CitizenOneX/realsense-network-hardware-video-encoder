@@ -2,7 +2,7 @@
 
 #include "audio_winmm.h"
 
-struct audio* audio_init(audio_state* cfg)
+struct audio* audio_init(audio_state& cfg)
 {
     audio* a = new audio();
 
@@ -22,7 +22,7 @@ struct audio* audio_init(audio_state* cfg)
         WAVE_MAPPER,                    // use default device (easiest)
         &wfx,                           // tell it our format
         (DWORD_PTR)audio_callback_wavedata,   // call us back when a buffer is full
-        (DWORD_PTR)cfg,                 // dwInstance (user data to pass back to the callback)
+        (DWORD_PTR)&cfg,                 // dwInstance (user data to pass back to the callback)
         CALLBACK_FUNCTION | WAVE_FORMAT_DIRECT   // tell it callback is a function CALLBACK_FUNCTION
     );
 
@@ -76,7 +76,7 @@ void CALLBACK audio_callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstan
     }
 }
 
-void audio_terminate(audio* a)
+void audio_close(audio* a)
 {
     waveInStop(a->wi);
     for (auto& h : a->headers)

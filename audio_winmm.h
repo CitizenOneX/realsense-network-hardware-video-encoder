@@ -41,8 +41,8 @@ struct audio
     HWAVEIN wi;
 };
 
-struct audio* audio_init(audio_state* cfg);
-void audio_terminate(audio* audio);
+struct audio* audio_init(audio_state& cfg);
+void audio_close(audio* audio);
 static void CALLBACK audio_callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
 
 #endif
