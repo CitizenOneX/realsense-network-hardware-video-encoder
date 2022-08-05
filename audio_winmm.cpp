@@ -61,12 +61,14 @@ void CALLBACK audio_callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstan
         WAVEHDR* h = (WAVEHDR*)dwParam1;
         audio_state* state = (audio_state*)dwInstance;
 
-        {
-            std::lock_guard<std::mutex> guard(state->audio_buffer_mutex);
+        {  // use the scope operator to release the lock before notify()
+            std::lock_guard<std::mutex> guard(*state->data_mutex);
             memcpy(state->audio_buffer, h->lpData, h->dwBytesRecorded);
             state->audio_data_length_written = h->dwBytesRecorded;
             state->audio_data_ready = true;
+            *state->data_ready = true;
         }
+        state->cv->notify_one();
 
         // then re-add the buffer to the queue
         h->dwFlags = 0;          // clear the 'done' flag

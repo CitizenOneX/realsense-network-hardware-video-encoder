@@ -11,6 +11,8 @@
 
 #define BOUNDING_DEPTH 0.5f
 
+using namespace std;
+
 const uint16_t P010LE_MAX = 0xFFC0; //in binary 10 ones followed by 6 zeroes
 
 //encoding index, alignment direction
@@ -33,7 +35,7 @@ struct input_args
 struct depth_video
 {
 	rs2::pipeline* realsense;
-	std::thread worker_thread;
+	thread worker_thread;
 	bool volatile keep_working;
 
 	depth_video() :
@@ -46,24 +48,29 @@ struct depth_video
 struct depth_video_state
 {
 	// guards the rest of depth_video_state
-	std::mutex depth_video_data_mutex;
+	mutex* data_mutex;
+	condition_variable* cv;
 	uint16_t* depth_uv; //data of dummy color plane for P010LE
-	int depth_stride = 0;
-	uint8_t* depth_data = NULL;
-	int color_stride = 0;
-	uint8_t* color_data = NULL;
-	volatile bool depth_video_data_ready = false;
+	int depth_stride;
+	uint8_t* depth_data;
+	int color_stride;
+	uint8_t* color_data;
+	bool depth_video_data_ready;
+	bool* data_ready;
 
 	depth_video_state() :
+		data_mutex(NULL),
+		cv(NULL),
 		depth_uv(NULL),
 		depth_stride(0),
 		depth_data(NULL),
 		color_stride(0),
 		color_data(NULL),
-		depth_video_data_ready(false)
+		depth_video_data_ready(false),
+		data_ready(NULL)
 	{}
 };
-// end protected by depth_video_data_mutex
+// end protected by data_mutex
 
 depth_video* depth_video_init(depth_video_state& dv_state, input_args& user_input);
 void depth_video_close(depth_video* dv);

@@ -83,12 +83,17 @@ static void realsense_worker_thread(depth_video* dv,  depth_video_state & dv_sta
 			// use a mutex to make sure the main thread doesn't read these
 			// while we're updating all of them
 			// TODO not sure how long these data pointers will last after the frames go out of scope...
-			std::lock_guard<std::mutex> guard(dv_state.depth_video_data_mutex);
-			dv_state.depth_stride = local_depth_stride;
-			dv_state.depth_data = (uint8_t*)depth.get_data();
-			dv_state.color_stride = color.get_stride_in_bytes();
-			dv_state.color_data = (uint8_t*)color.get_data();
-			dv_state.depth_video_data_ready = true;
+			{  // use the scope operator to release the lock before notify()
+				std::lock_guard<std::mutex> guard(*dv_state.data_mutex);
+				dv_state.depth_stride = local_depth_stride;
+				dv_state.depth_data = (uint8_t*)depth.get_data();
+				dv_state.color_stride = color.get_stride_in_bytes();
+				dv_state.color_data = (uint8_t*)color.get_data();
+				dv_state.depth_video_data_ready = true;
+				*dv_state.data_ready = true;
+			}
+			dv_state.cv->notify_one();
+
 		}
 	}
 

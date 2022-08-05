@@ -14,18 +14,23 @@
 #define BYTES_PER_SAMPLE 4
 #define AUDIO_BUFFER_SAMPLES 4096
 
+using namespace std;
+
 struct audio_state
 {
     // guards the rest of audio_state
-    std::mutex audio_buffer_mutex;
+    mutex* data_mutex;
+    condition_variable* cv;
     float* audio_buffer;
     int audio_data_length_written;
-    bool volatile audio_data_ready;
+    bool audio_data_ready;
+    bool* data_ready;
 
-    audio_state():
+    audio_state() :
         audio_buffer(new float[AUDIO_BUFFER_SAMPLES]),
         audio_data_length_written(0),
-        audio_data_ready(false)
+        audio_data_ready(false),
+        data_ready(NULL)
     {}
 
     ~audio_state()

@@ -31,7 +31,7 @@
 using namespace std;
 
 int hint_user_on_failure(char *argv[]);
-bool main_loop(nhve *streamer, depth_video_state& dv_state, audio_state& a_state);
+bool main_loop(nhve *streamer, depth_video_state& dv_state, audio_state& a_state, mutex* data_ready_mutex, condition_variable* cv, bool* data_ready);
 int process_user_input(int argc, char* argv[], input_args* input, nhve_net_config *net_config, nhve_hw_config *hw_config);
 
 int main(int argc, char* argv[])
@@ -47,16 +47,26 @@ int main(int argc, char* argv[])
 	if(process_user_input(argc, argv, &user_input, &net_config, hw_configs) < 0)
 		return 1;
 
+	mutex data_ready_mutex;
+	condition_variable cv;
+	bool data_ready = false;
+
 	audio_state a_state;
+	a_state.data_mutex = &data_ready_mutex;
+	a_state.data_ready = &data_ready;
+	a_state.cv = &cv;
 	audio* a = audio_init(a_state);
 
 	depth_video_state dv_state;
+	dv_state.data_mutex = &data_ready_mutex;
+	dv_state.data_ready = &data_ready;
+	dv_state.cv = &cv;
 	depth_video* dv = depth_video_init(dv_state, user_input);
 
 	if( (streamer = nhve_init(&net_config, hw_configs, 2, 1)) == NULL )
 		return hint_user_on_failure(argv);
 
-	bool status = main_loop(streamer, dv_state, a_state);
+	bool status = main_loop(streamer, dv_state, a_state, &data_ready_mutex, &cv, &data_ready);
 
 	nhve_close(streamer);
 	depth_video_close(dv);
@@ -69,56 +79,61 @@ int main(int argc, char* argv[])
 }
 
 //true on success, false on failure
-bool main_loop(nhve *streamer, depth_video_state& dv_state, audio_state& a_state)
+bool main_loop(nhve *streamer, depth_video_state& dv_state, audio_state& a_state, mutex* data_ready_mutex, condition_variable* cv, bool* data_ready)
 {
 	nhve_frame frame[3] = { {0}, {0}, {0} };
 	bool frame_ready = false;
 
-	// this loop should run pretty hot...
-	while (!(GetAsyncKeyState(VK_ESCAPE) & 0x8000))  // keep looping until the user hits escape
+	// keep looping until the user hits escape
+	while (!(GetAsyncKeyState(VK_ESCAPE) & 0x8000))
 	{
-		if (dv_state.depth_video_data_ready)
-		{
-			std::lock_guard<std::mutex> guard(dv_state.depth_video_data_mutex);
+		// wait for notification rather than run hot
+		{  // scope here to manage the lifetime of the mutex
+			unique_lock<mutex> lk(*data_ready_mutex);
+			cv->wait(lk, [&] { return *data_ready; });
 
-			//supply realsense frame data as ffmpeg frame data
-			frame[0].data[0] = dv_state.depth_data;
-			frame[0].data[1] = (uint8_t*)dv_state.depth_uv;
-			frame[0].linesize[0] = frame[0].linesize[1] = dv_state.depth_stride; //the strides of Y and UV are equal
+			if (dv_state.depth_video_data_ready)
+			{
+				//supply realsense frame data as ffmpeg frame data
+				frame[0].data[0] = dv_state.depth_data;
+				frame[0].data[1] = (uint8_t*)dv_state.depth_uv;
+				frame[0].linesize[0] = frame[0].linesize[1] = dv_state.depth_stride; //the strides of Y and UV are equal
 
-			frame[1].data[0] = dv_state.color_data;
-			frame[1].linesize[0] = dv_state.color_stride;
+				frame[1].data[0] = dv_state.color_data;
+				frame[1].linesize[0] = dv_state.color_stride;
 
-			dv_state.depth_video_data_ready = false;
-			frame_ready = true;
-		}
-		else
-		{
-			// zero out subframes 0 and 1 if there's no depth/color frame this time
-			frame[0].data[0] = 0;
-			frame[0].data[1] = 0;
-			frame[0].linesize[0] = 0;
-			frame[0].linesize[1] = 0;
+				dv_state.depth_video_data_ready = false;
+				*dv_state.data_ready = false;
+				frame_ready = true;
+			}
+			else
+			{
+				// zero out subframes 0 and 1 if there's no depth/color frame this time
+				frame[0].data[0] = 0;
+				frame[0].data[1] = 0;
+				frame[0].linesize[0] = 0;
+				frame[0].linesize[1] = 0;
 
-			frame[1].data[0] = 0;
-			frame[1].linesize[0] = 0;
-		}
+				frame[1].data[0] = 0;
+				frame[1].linesize[0] = 0;
+			}
 
-		if (a_state.audio_data_ready)
-		{
-			// pass on the audio in subframe 2
-			std::lock_guard<std::mutex> guard(a_state.audio_buffer_mutex);
-			frame[2].data[0] = (uint8_t*)a_state.audio_buffer;
-			frame[2].linesize[0] = a_state.audio_data_length_written;
-			a_state.audio_data_ready = false;
-			frame_ready = true;
-		}
-		else
-		{
-			// set subframe 2 to empty if there's no audio this time
-			frame[2].data[0] = NULL;
-			frame[2].linesize[0] = 0;
-		}
+			if (a_state.audio_data_ready)
+			{
+				// pass on the audio in subframe 2
+				frame[2].data[0] = (uint8_t*)a_state.audio_buffer;
+				frame[2].linesize[0] = a_state.audio_data_length_written;
+				a_state.audio_data_ready = false;
+				*a_state.data_ready = false;
+				frame_ready = true;
+			}
+			else
+			{
+				// set subframe 2 to empty if there's no audio this time
+				frame[2].data[0] = NULL;
+				frame[2].linesize[0] = 0;
+			}
+		} // don't need the mutex anymore
 
 		// only send a frame if at least one of the subframes had data
 		if (frame_ready)
