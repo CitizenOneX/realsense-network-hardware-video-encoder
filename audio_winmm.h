@@ -12,7 +12,7 @@
 #define SAMPLE_RATE 22050
 #define CHANNELS 1
 #define BYTES_PER_SAMPLE 4
-#define AUDIO_BUFFER_SAMPLES 4096
+#define AUDIO_BUFFER_SAMPLES 1400
 
 using namespace std;
 
