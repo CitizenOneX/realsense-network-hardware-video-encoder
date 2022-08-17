@@ -7,11 +7,11 @@ struct audio* audio_init(audio_state& cfg)
     audio* a = new audio();
 
     // Fill the WAVEFORMATEX struct to indicate the format of our recorded audio
-    //   For this example we'll use medium quality, ie:  22050 Hz, mono, 32-bit floats
+    //   For this example we'll use medium quality, ie: 24000 Hz, mono, 32-bit floats
     WAVEFORMATEX wfx = {};
     wfx.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;     // PCM data as floats [-1..1]
     wfx.nChannels = CHANNELS;                    // 1 channel = mono sound
-    wfx.nSamplesPerSec = SAMPLE_RATE;            // Samplerate.  22050 Hz
+    wfx.nSamplesPerSec = SAMPLE_RATE;            // Sample rate
     wfx.wBitsPerSample = 8 * BYTES_PER_SAMPLE;   // 32 since we have 32-bit floats
     // These others are computations:
     wfx.nBlockAlign = wfx.wBitsPerSample * wfx.nChannels / 8;

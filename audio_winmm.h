@@ -9,7 +9,7 @@
 #include <mmsystem.h>
 #include <mutex>
 
-#define SAMPLE_RATE 22050
+#define SAMPLE_RATE 24000
 #define CHANNELS 1
 #define BYTES_PER_SAMPLE 4
 #define AUDIO_BUFFER_SAMPLES 256
