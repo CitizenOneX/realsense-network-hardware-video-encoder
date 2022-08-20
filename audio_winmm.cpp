@@ -7,12 +7,12 @@ struct audio* audio_init(audio_state& cfg)
     audio* a = new audio();
 
     // Fill the WAVEFORMATEX struct to indicate the format of our recorded audio
-    //   For this example we'll use medium quality, ie: 24000 Hz, mono, 32-bit floats
+    //   For this example we'll use medium quality, ie: 24000 Hz, mono, 16-bit signed ints
     WAVEFORMATEX wfx = {};
-    wfx.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;     // PCM data as floats [-1..1]
+    wfx.wFormatTag = WAVE_FORMAT_PCM;            // PCM data as signed integers
     wfx.nChannels = CHANNELS;                    // 1 channel = mono sound
     wfx.nSamplesPerSec = SAMPLE_RATE;            // Sample rate
-    wfx.wBitsPerSample = 8 * BYTES_PER_SAMPLE;   // 32 since we have 32-bit floats
+    wfx.wBitsPerSample = 8 * BYTES_PER_SAMPLE;   // 16 bit signed ints
     // These others are computations:
     wfx.nBlockAlign = wfx.wBitsPerSample * wfx.nChannels / 8;
     wfx.nAvgBytesPerSec = wfx.nBlockAlign * wfx.nSamplesPerSec;
@@ -30,7 +30,7 @@ struct audio* audio_init(audio_state& cfg)
     for (int i = 0; i < 2; ++i)
     {
         a->headers[i].lpData = a->buffers[i];                         // give it a pointer to our buffer
-        a->headers[i].dwBufferLength = AUDIO_BUFFER_SAMPLES * 4;   // tell it the size of that buffer in bytes
+        a->headers[i].dwBufferLength = AUDIO_BUFFER_SAMPLES * CHANNELS * BYTES_PER_SAMPLE;   // tell it the size of that buffer in bytes
         // the other parts of the header we don't really care about, and can be left at zero
 
         // Prepare each header
@@ -49,8 +49,8 @@ struct audio* audio_init(audio_state& cfg)
 
 /// <summary>
 /// Callback implementation
-/// In the callback thread, lock the audio float buffer and
-/// copy the PCM (float) data straight over
+/// In the callback thread, lock the audio buffer and
+/// copy the PCM data straight over
 /// releasing the lock at the end and releasing the audio buffers back to the WaveIn device
 /// </summary>
 void CALLBACK audio_callback_wavedata(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)

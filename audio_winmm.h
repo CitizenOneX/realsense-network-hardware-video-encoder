@@ -11,8 +11,9 @@
 
 #define SAMPLE_RATE 24000
 #define CHANNELS 1
-#define BYTES_PER_SAMPLE 4
-#define AUDIO_BUFFER_SAMPLES 256
+#define BYTES_PER_SAMPLE 2
+// AAudio framesPerBurst on DevKit is 642 in regular performance mode, 290 in LOW_LATENCY mode
+#define AUDIO_BUFFER_SAMPLES 642
 
 using namespace std;
 
@@ -21,13 +22,15 @@ struct audio_state
     // guards the rest of audio_state
     mutex* data_mutex;
     condition_variable* cv;
-    float* audio_buffer;
+    int16_t* audio_buffer;
     int audio_data_length_written;
     bool audio_data_ready;
     bool* data_ready;
 
     audio_state() :
-        audio_buffer(new float[AUDIO_BUFFER_SAMPLES]),
+        data_mutex(NULL),
+        cv(NULL),
+        audio_buffer(new int16_t[AUDIO_BUFFER_SAMPLES * CHANNELS]),
         audio_data_length_written(0),
         audio_data_ready(false),
         data_ready(NULL)
@@ -41,7 +44,8 @@ struct audio_state
 
 struct audio
 {
-    char buffers[2][AUDIO_BUFFER_SAMPLES * 4];      // 32-bit float samples, what Unity likes best
+    // double buffer of samples * channels * bytesPerSample bytes
+    char buffers[2][AUDIO_BUFFER_SAMPLES * CHANNELS * BYTES_PER_SAMPLE];
     WAVEHDR headers[2] = { {},{} };                 // initialize headers to zeros
     HWAVEIN wi;
 };

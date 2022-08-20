@@ -2,7 +2,7 @@
  * Realsense Network Hardware Video Encoder with Audio
  *
  * Realsense hardware encoded UDP HEVC aligned multi-streaming
- * - depth (Main10) + color (Main) + audio (raw 32-bit mono PCM floats in aux nhve channel)
+ * - depth (Main10) + color (Main) + audio (raw signed 16-bit mono PCM in aux nhve channel)
  *
  * Copyright 2020 (C) Bartosz Meglicki <meglickib@gmail.com>
  * Audio added by CitizenOne
