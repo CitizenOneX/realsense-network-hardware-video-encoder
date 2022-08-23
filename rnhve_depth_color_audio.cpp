@@ -42,7 +42,9 @@ int main(int argc, char* argv[])
 	struct nhve *streamer;
 
 	struct input_args user_input = {0};
-	user_input.depth_units=0.0001f; //optionally override with user input
+	user_input.depth_units = 0.00025f; //1.6cm resolution(!)
+	//user_input.depth_units = 0.000015625; //1mm resolution, 1.024m range - optionally override with user input
+	
 
 	if(process_user_input(argc, argv, &user_input, &net_config, hw_configs) < 0)
 		return 1;

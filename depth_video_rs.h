@@ -77,6 +77,7 @@ void depth_video_close(depth_video* dv);
 void init_realsense(rs2::pipeline& pipe, input_args& input);
 void init_realsense_depth(rs2::pipeline& pipe, const rs2::config& cfg, input_args& input);
 void print_intrinsics(const rs2::pipeline_profile& profile, rs2_stream stream);
+void rescale_depth_slice_for_tenbit(rs2::depth_frame& depth, int16_t minInUnits);
 void process_depth_data(const input_args& input, rs2::depth_frame& depth);
 static void realsense_worker_thread(depth_video* dv, depth_video_state& dv_state, input_args& input);
 

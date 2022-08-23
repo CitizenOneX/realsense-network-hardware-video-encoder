@@ -53,21 +53,41 @@ static void realsense_worker_thread(depth_video* dv,  depth_video_state & dv_sta
 		frameset = aligner.process(frameset);
 
 		rs2::depth_frame depth = frameset.get_depth_frame();
-		// put a bounding volume around the object in the center of the frame, +-0.5m
-		update_thresholds(thresh_filter, depth.get_distance(depth.get_width() / 2, depth.get_height() / 2));
-		depth = thresh_filter.process(depth);
 		rs2::video_frame color = frameset.get_color_frame();
 
-		// TODO do I need to set all color frame pixels to black whose depth=0 in the depth frame?
-		// can the threshold_filter tell me which pixels it changed? Or is it easier for me to
-		// implement the threshold filter manually and set both depth and color together?
+		// put a bounding volume around the object in the center of the frame, +-0.5m
+		//float center_depth = depth.get_distance(depth.get_width() / 2, depth.get_height() / 2);
+
+		//update_thresholds(thresh_filter, center_depth);
+		//depth = thresh_filter.process(depth);
 
 		const int h = depth.get_height();
 		int local_depth_stride = depth.get_stride_in_bytes();
 
 		//L515 doesn't support setting depth units and clamping
-		if (input.needs_postprocessing)
-			process_depth_data(input, depth);
+		// TODO comment out for now because I think it's just going to go over the whole depth image and multiply by 1
+		//if (input.needs_postprocessing)
+		//	process_depth_data(input, depth);
+
+		// TODO what I actually want to do here is find the 1.024m depth slice that I care about the most
+		// and shift it forwards (e.g. subtract (depth.get_distance(depth.get_width() / 2, depth.get_height() / 2) from
+		// all the depth values so they take up the 10LSB of the int16, then make sure those 10 bits are the ones
+		// being encoded (might need to bit shift them up to the MSB bits, ie. shift by 6?)
+		// then the range is really back to between 0 and 1.024m, everything above goes to 0/infinity
+		// Ideally then we'd send the displacement as an aux channel or something so it could be reconstructed
+		// at the right depth in the receiver. Although I could also just keep it a fixed distance away. But the
+		// width to deproject it to does depend on the distance, so it had better not change much. Start by making it fixed
+		// subtraction from sender end, fixed addition to receiver end. (power-of-two number of 0.25mm units? E.g. 2048 units = 51.6cm minimum
+		// add 1024 more units = 76.8cm. 
+		// Or, if I don't need 0.25mm precision, I can coarse-grain to .5mm or 1mm and get a 516mm or 1024mm slice (right-shift 1, 2)
+		// shift those 10 bits to MSB, encode
+		// decode, shift back to LSB, add offset (2048 units = 51.6cm?), deproject etc.
+		// Consider: when does int16 get turned into normalised float for shader - and do I need to do integer arithmetic before then?
+		// does that mean I have an int16 texture in the shader and convert to float in code?
+		// Also consider: on the receiver end, if I've simulated a depth unit of 0.5mm or 1.0mm by coarse-graining, maybe
+		// I can just specify that as the depth config rather than reverse all my calculations.
+		// In any case, 1mm precision should look amazing compared to 1.6cm?!
+		rescale_depth_slice_for_tenbit(depth, 2048); // 51.6cm minimum distance
 
 		if (!dv_state.depth_uv)
 		{  //prepare dummy color plane for P010LE format, half the size of Y
@@ -115,6 +135,34 @@ void process_depth_data(const input_args& input, rs2::depth_frame& depth)
 	{
 		uint32_t val = data[i] * multiplier;
 		data[i] = val <= P010LE_MAX ? val : 0;
+	}
+}
+
+/// <summary>
+/// We can only send 10 bits of "grayscale" for depth, packed into the 10 MSB of the 16-bit depth value
+/// but we can choose which 10 bits to send - highest-precision 10 bits (and only 1024 depth units deep)
+/// or 1/4 the depth precision but 4096 depth units deep etc.
+/// Let's take a 2^10 unit sample of depth (1024 * 0.00025m = 25cm on L515)
+/// starting at depth==min units offset (e.g. 2048 or 51.2cm on L515)
+/// and translate it back to min==0 to occupy depth 0-25cm (10 LSB), then shift up 6 to 10 MSB
+/// Coarse-graining to 0.5mm to get 51.2cm slice (LSB 2-11) (or try 1mm to get 1.024m slice - LSB 3-12)
+/// (Division of depth by 2 (or 4) is a quick bit-shift)
+/// </summary>
+/// <param name="depth"></param>
+/// <param name="min"></param>
+void rescale_depth_slice_for_tenbit(rs2::depth_frame& depth, int16_t minInUnits)
+{
+	const int half_stride = depth.get_stride_in_bytes() / 2;
+	const int height = depth.get_height();
+
+	//note - we process data in place rather than making a copy
+	uint16_t* data = (uint16_t*)depth.get_data();
+
+	for (int i = 0; i < half_stride * height; ++i)
+	{
+		// for depth values between minInUnits and minInUnits + 1024
+		// subtract the min, shift values up towards MSB by (6)
+		data[i] = (data[i] > minInUnits && data[i] < (minInUnits + 1024)) ? (data[i] - minInUnits) << 6 : 0;
 	}
 }
 
