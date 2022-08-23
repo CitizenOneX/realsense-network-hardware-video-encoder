@@ -160,9 +160,10 @@ void rescale_depth_slice_for_tenbit(rs2::depth_frame& depth, int16_t minInUnits)
 
 	for (int i = 0; i < half_stride * height; ++i)
 	{
-		// for depth values between minInUnits and minInUnits + 1024
-		// subtract the min, shift values up towards MSB by (6)
-		data[i] = (data[i] > minInUnits && data[i] < (minInUnits + 1024)) ? (data[i] - minInUnits) << 6 : 0;
+		// using 1mm resolution rather than 1/4mm for a 4096 unit (1.024m) range
+		// for depth values between minInUnits and minInUnits + 2048
+		// subtract the min, shift values up towards MSB by (6-2)
+		data[i] = (data[i] > minInUnits && data[i] < (minInUnits + 4096)) ? (data[i] - minInUnits) << 4 : 0;
 	}
 }
 
