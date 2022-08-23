@@ -247,6 +247,12 @@ void init_realsense_depth(rs2::pipeline& pipe, const rs2::config& cfg, input_arg
 	}
 	cout << (supports_advanced_mode ? "Clamping" : "Simulating clamping") <<
 		" range at " << input.depth_units * P010LE_MAX << " m" << endl;
+
+	if (depth_sensor.supports(RS2_OPTION_VISUAL_PRESET))
+	{
+		depth_sensor.set_option(RS2_OPTION_VISUAL_PRESET, RS2_L500_VISUAL_PRESET_SHORT_RANGE);
+		cout << "L500 visual preset set to Short Range" << endl;
+	}
 }
 
 void print_intrinsics(const rs2::pipeline_profile& profile, rs2_stream stream)
