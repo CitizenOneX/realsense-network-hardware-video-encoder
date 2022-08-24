@@ -6,12 +6,6 @@
 
 using namespace std;
 
-inline void update_thresholds(rs2::threshold_filter& filter, float center)
-{
-	filter.set_option(RS2_OPTION_MIN_DISTANCE, fmaxf(center - BOUNDING_DEPTH, 0.15f));
-	filter.set_option(RS2_OPTION_MAX_DISTANCE, fminf(center + BOUNDING_DEPTH, 2.0f));
-}
-
 depth_video* depth_video_init(depth_video_state& dv_state, input_args& user_input)
 {
 	depth_video* dv = new depth_video();
@@ -65,29 +59,24 @@ static void realsense_worker_thread(depth_video* dv,  depth_video_state & dv_sta
 		int local_depth_stride = depth.get_stride_in_bytes();
 
 		//L515 doesn't support setting depth units and clamping
-		// TODO comment out for now because I think it's just going to go over the whole depth image and multiply by 1
+		// comment out for now because it's just going to go over the whole depth image and multiply by 1
 		//if (input.needs_postprocessing)
 		//	process_depth_data(input, depth);
 
-		// TODO what I actually want to do here is find the 1.024m depth slice that I care about the most
+		// What I actually want to do here is find the 25.6cm depth slice (or 51.2cm, or 1.024m) that I care about the most
 		// and shift it forwards (e.g. subtract (depth.get_distance(depth.get_width() / 2, depth.get_height() / 2) from
 		// all the depth values so they take up the 10LSB of the int16, then make sure those 10 bits are the ones
-		// being encoded (might need to bit shift them up to the MSB bits, ie. shift by 6?)
-		// then the range is really back to between 0 and 1.024m, everything above goes to 0/infinity
+		// being encoded (by bit shifting them up to the MSB bits, ie. shift by 6 (or 5, or 4))
+		// Then the range is really back to between 0 and 25.6cm (or 51.2cm, or 1.024m), everything above goes to 0/infinity
 		// Ideally then we'd send the displacement as an aux channel or something so it could be reconstructed
 		// at the right depth in the receiver. Although I could also just keep it a fixed distance away. But the
 		// width to deproject it to does depend on the distance, so it had better not change much. Start by making it fixed
 		// subtraction from sender end, fixed addition to receiver end. (power-of-two number of 0.25mm units? E.g. 2048 units = 51.6cm minimum
-		// add 1024 more units = 76.8cm. 
+		// or add 1024 more units = 76.8cm. 
 		// Or, if I don't need 0.25mm precision, I can coarse-grain to .5mm or 1mm and get a 516mm or 1024mm slice (right-shift 1, 2)
 		// shift those 10 bits to MSB, encode
 		// decode, shift back to LSB, add offset (2048 units = 51.6cm?), deproject etc.
-		// Consider: when does int16 get turned into normalised float for shader - and do I need to do integer arithmetic before then?
-		// does that mean I have an int16 texture in the shader and convert to float in code?
-		// Also consider: on the receiver end, if I've simulated a depth unit of 0.5mm or 1.0mm by coarse-graining, maybe
-		// I can just specify that as the depth config rather than reverse all my calculations.
-		// In any case, 1mm precision should look amazing compared to 1.6cm?!
-		rescale_depth_slice_for_tenbit(depth, 2048); // 51.6cm minimum distance
+		rescale_depth_slice_for_tenbit(depth, 2048); // 2048 depth units = 51.6cm displacement, minimum distance from camera
 
 		if (!dv_state.depth_uv)
 		{  //prepare dummy color plane for P010LE format, half the size of Y
@@ -142,11 +131,10 @@ void process_depth_data(const input_args& input, rs2::depth_frame& depth)
 /// We can only send 10 bits of "grayscale" for depth, packed into the 10 MSB of the 16-bit depth value
 /// but we can choose which 10 bits to send - highest-precision 10 bits (and only 1024 depth units deep)
 /// or 1/4 the depth precision but 4096 depth units deep etc.
-/// Let's take a 2^10 unit sample of depth (1024 * 0.00025m = 25cm on L515)
+/// Let's take a 2^12 unit sample of depth (4096 * 0.00025m = 1.024m on L515)
 /// starting at depth==min units offset (e.g. 2048 or 51.2cm on L515)
-/// and translate it back to min==0 to occupy depth 0-25cm (10 LSB), then shift up 6 to 10 MSB
+/// and translate it back to min==0 to occupy depth 0-1.024m (12 LSB), then shift up 4 to 12 MSB (and discard the last two bits)
 /// Coarse-graining to 0.5mm to get 51.2cm slice (LSB 2-11) (or try 1mm to get 1.024m slice - LSB 3-12)
-/// (Division of depth by 2 (or 4) is a quick bit-shift)
 /// </summary>
 /// <param name="depth"></param>
 /// <param name="min"></param>
